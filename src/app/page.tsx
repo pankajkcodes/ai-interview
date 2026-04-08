@@ -1,11 +1,30 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { INTERVIEW_ROLES } from "@/lib/gemini";
+import { getCustomSkills } from "@/lib/storage";
+import { Skill } from "@/lib/types";
 import Link from "next/link";
 import { ArrowRight, Mic, Video, Sparkles, ShieldCheck, Cpu, Trophy, MousePointerClick } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
+  const [allRoles, setAllRoles] = useState(INTERVIEW_ROLES);
+
+  useEffect(() => {
+    // Load custom skills on mount and listen for storage changes
+    const loadSkills = () => {
+      const customSkills = getCustomSkills();
+      setAllRoles([...INTERVIEW_ROLES, ...customSkills]);
+    };
+
+    loadSkills();
+    // In a real app we might want to sync this across tabs or listen to custom events, 
+    // but for now, it loads on mount.
+    window.addEventListener('storage', loadSkills);
+    return () => window.removeEventListener('storage', loadSkills);
+  }, []);
+
   return (
     <main className="pt-40 pb-32 no-underline">
       {/* Hero Section */}
@@ -94,7 +113,7 @@ export default function Home() {
           </header>
 
           <div className="role-grid">
-            {INTERVIEW_ROLES.map((role, idx) => (
+            {allRoles.map((role, idx) => (
               <motion.div 
                 key={role.id}
                 initial={{ opacity: 0, y: 40 }}
@@ -104,35 +123,36 @@ export default function Home() {
               >
                 <Link 
                   href={`/interview?role=${role.id}`} 
-                  className="glass-card flex flex-col h-full group no-underline text-inherit relative overflow-hidden p-0 border-white/10"
+                  className="glass-card group no-underline text-inherit relative overflow-hidden p-0"
+                  style={{ display: 'flex', flexDirection: 'column', height: '100%', borderColor: 'rgba(255, 255, 255, 0.1)', transition: 'all 0.3s' }}
                 >
                   {/* Role Accent Header */}
                   <div className="role-card-header" style={{ background: role.bgGradient }} />
                   
-                  <div className="p-8 flex flex-col h-full">
-                    <div className="flex items-start justify-between mb-8">
+                  <div className="p-8" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexGrow: 1 }}>
+                    <div className="u-flex u-justify-between" style={{ alignItems: 'flex-start', marginBottom: '2rem' }}>
                        <div className="icon-container relative overflow-hidden" style={{ width: '3.5rem', height: '3.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                          <Cpu size={28} className="text-gray-400 group-hover:text-white transition-colors" />
                       </div>
-                      <div className="absolute top-10 right-10 opacity-0 group-hover:opacity-100 transition-all">
-                         <MousePointerClick size={20} className="text-blue-500" style={{ opacity: 0.5 }} />
+                      <div style={{ position: 'absolute', top: '2.5rem', right: '2.5rem', opacity: 0.5 }}>
+                         <MousePointerClick size={20} className="text-blue-500" />
                       </div>
                     </div>
 
-                    <h3 className="text-2xl font-black mb-4 group-hover:text-blue-400 transition-colors uppercase tracking-tight no-underline">
+                    <h3 className="text-2xl font-black mb-4 uppercase tracking-tight no-underline" style={{ color: role.color }}>
                       {role.name}
                     </h3>
                     
-                    <p className="text-gray-500 text-base leading-relaxed mb-10 flex-grow font-medium">
+                    <p className="text-gray-500 text-sm leading-relaxed mb-10 font-medium" style={{ flexGrow: 1 }}>
                       {role.description}
                     </p>
 
-                    <div className="flex items-center justify-between pt-8 border-t border-white/10 group-hover:border-white/20 transition-colors">
-                      <span className="text-xs font-black tracking-widest text-blue-500 uppercase group-hover:text-white transition-colors" style={{ opacity: 0.8 }}>
+                    <div className="u-flex u-items-center u-justify-between" style={{ paddingTop: '2rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)', marginTop: 'auto' }}>
+                      <span className="font-black uppercase" style={{ fontSize: '0.65rem', letterSpacing: '0.15em', color: '#60a5fa' }}>
                         Ready to Begin
                       </span>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center transition-all" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
-                        <ArrowRight size={16} className="text-blue-500 group-hover:text-white" />
+                      <div className="u-flex u-items-center u-justify-center" style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                        <ArrowRight size={14} color="#60a5fa" />
                       </div>
                     </div>
                   </div>

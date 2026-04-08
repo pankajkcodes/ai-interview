@@ -67,19 +67,20 @@ export default function AIInterviewerVisual({ isSpeaking, isLoading }: AIIntervi
       </motion.div>
 
       {/* Top Left Identity */}
-      <div className="absolute top-10 left-10 flex flex-col gap-1">
-        <span className="text-[10px] font-black tracking-[0.3em] text-blue-500 uppercase opacity-50">Virtual Interviewer</span>
-        <span className="text-sm font-bold text-white/40 tracking-tight">Gemini Advanced Core</span>
+      <div className="u-flex u-flex-col" style={{ position: 'absolute', top: '2.5rem', left: '2.5rem', gap: '0.25rem' }}>
+        <span style={{ fontSize: '0.625rem', fontWeight: 900, letterSpacing: '0.3em', color: '#3b82f6', textTransform: 'uppercase', opacity: 0.5 }}>Virtual Interviewer</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: '-0.025em' }}>Gemini Advanced Core</span>
       </div>
 
       {/* Bottom Status Hub */}
       <motion.div 
         animate={isSpeaking ? { y: [0, -4, 0] } : {}}
         transition={{ duration: 2, repeat: Infinity }}
-        className="absolute bottom-12 flex items-center gap-3 px-5 py-2 bg-white/[0.03] backdrop-blur-md rounded-full border border-white/5"
+        className="u-flex u-items-center"
+        style={{ position: 'absolute', bottom: '3rem', gap: '0.75rem', padding: '0.5rem 1.25rem', background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderRadius: '9999px', border: '1px solid rgba(255,255,255,0.05)' }}
       >
-        <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-amber-500' : isSpeaking ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500/40'}`} />
-        <span className="text-[9px] font-black tracking-[0.2em] text-white/40 uppercase">
+        <div style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: isLoading ? '#f59e0b' : isSpeaking ? '#60a5fa' : 'rgba(16, 185, 129, 0.4)' }} className={isSpeaking ? 'animate-pulse' : ''} />
+        <span style={{ fontSize: '0.5625rem', fontWeight: 900, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>
           {isLoading ? 'Processing Knowledge' : isSpeaking ? 'Transmitting Data' : 'Monitoring Input'}
         </span>
       </motion.div>

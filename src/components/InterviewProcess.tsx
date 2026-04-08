@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Mic, MicOff, Send, Volume2, AudioLines, AlertCircle, RefreshCcw, Loader2, StopCircle, User, MoreHorizontal, Video, VideoOff, Layout, LogOut, MessageSquare, Sparkles } from "lucide-react";
-import { handleInterviewStep } from "@/app/actions";
+import { Mic, MicOff, Send, AlertCircle, Loader2, StopCircle, Video, VideoOff, MessageSquare, Sparkles, X } from "lucide-react";
+import { handleInterviewStep, handleInterviewFinisher } from "@/app/actions";
 import { useRouter } from "next/navigation";
 import AIInterviewerVisual from "./AIInterviewerVisual";
 import { motion, AnimatePresence } from "framer-motion";
 import "../app/interview/interview.css";
+import { getAIConfig } from "@/lib/storage";
 
 declare global {
   interface Window {
@@ -29,18 +30,17 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
   const [error, setError] = useState<string | null>(null);
   const [previousQA, setPreviousQA] = useState<{ question: string, answer: string }[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
-  
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [showTranscript, setShowTranscript] = useState(true);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
 
   const recognitionRef = useRef<any>(null);
   const hasStarted = useRef(false);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
-    }, 1000);
+    const timer = setInterval(() => setElapsedTime(prev => prev + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -55,7 +55,6 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
       recognitionRef.current = new window.webkitSpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-
       recognitionRef.current.onresult = (event: any) => {
         let transcript = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -63,21 +62,12 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
         }
         setAnswer(transcript);
       };
-
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech Recognition Error:", event.error);
-        setIsListening(false);
-      };
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-      };
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
     }
-    
-    // Stabilized Initial Start
     if (!hasStarted.current) {
-        hasStarted.current = true;
-        startStep(0, []);
+      hasStarted.current = true;
+      startStep(0, []);
     }
   }, []);
 
@@ -95,12 +85,15 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
     setIsLoading(true);
     setError(null);
     try {
-      console.log(`[Interview] Fetching step ${index} for ${role}...`);
-      const result = await handleInterviewStep(role, { questionIndex: index, previousQA: history });
-      
+      const config = getAIConfig() || undefined;
+      const result = await handleInterviewStep(role, { questionIndex: index, previousQA: history }, config);
       if (result.success && result.content) {
         if (result.content.includes("INTERVIEW_COMPLETE")) {
           localStorage.setItem("interview_results", JSON.stringify({ role, history }));
+          const evaluationResult = await handleInterviewFinisher(role, history, config);
+          if (evaluationResult.success) {
+            localStorage.setItem("interview_evaluation", JSON.stringify(evaluationResult.evaluation));
+          }
           router.push("/results");
           return;
         }
@@ -128,6 +121,7 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
 
   const handleSubmitAnswer = () => {
     if (!answer.trim()) return;
+    setFeedback(null);
     const newHistory = [...previousQA, { question: currentQuestion, answer }];
     setPreviousQA(newHistory);
     setAnswer("");
@@ -135,152 +129,216 @@ export default function InterviewProcess({ role }: InterviewProcessProps) {
       setQuestionIndex(prev => prev + 1);
       startStep(questionIndex + 1, newHistory);
     } else {
-      localStorage.setItem("interview_results", JSON.stringify({ role, history: newHistory }));
-      router.push("/results");
+      startStep(questionIndex + 1, newHistory);
     }
   };
 
+  // Ask AI for quick feedback on the current answer without advancing
+  const handleAskFeedback = async () => {
+    if (!answer.trim() || isFeedbackLoading) return;
+    setIsFeedbackLoading(true);
+    setFeedback(null);
+    try {
+      const config = getAIConfig() || undefined;
+      const prompt = `You are a technical interviewer. The candidate was asked: "${currentQuestion}". Their answer was: "${answer}". Give brief, constructive feedback in 2-3 sentences. Focus on what was good and one thing to improve.`;
+      const result = await handleInterviewStep(prompt, { questionIndex: 0, previousQA: [] }, config);
+      if (result.success && result.content) {
+        setFeedback(result.content);
+      } else {
+        setFeedback("Could not get feedback. Please check your API key in Console Setup.");
+      }
+    } catch {
+      setFeedback("Failed to get feedback. Please try again.");
+    } finally {
+      setIsFeedbackLoading(false);
+    }
+  };
+
+  const hasAnswer = answer.trim().length > 0 && !isListening;
+
   return (
     <div className="iv-room-container">
-      
       <div className="iv-viewport">
         <AIInterviewerVisual isSpeaking={isSpeaking} isLoading={isLoading} />
-        
-        {/* Overlays */}
+
+        {/* Bottom-left AI label */}
         <div className="video-overlay-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
-          <span className="text-xs font-bold text-white tracking-wide">Gemini Advanced</span>
+          <div style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: isSpeaking ? '#60a5fa' : '#374151', transition: 'background 0.3s' }} />
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'white' }}>Gemini Advanced</span>
         </div>
 
-        <div className="absolute top-6 right-6 z-20 flex gap-4">
-           <div className="px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg">
-              <span className="text-[10px] font-black tracking-widest text-blue-400">SESSION: 0{questionIndex + 1}</span>
-           </div>
-           <div className="px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg">
-              <span className="text-[10px] font-black tracking-widest text-white/30">{formatTime(elapsedTime)}</span>
-           </div>
+        {/* Top-right session chips */}
+        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', zIndex: 20, display: 'flex', gap: '0.5rem' }}>
+          <div style={{ padding: '0.3rem 0.8rem', background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem' }}>
+            <span style={{ fontSize: '0.625rem', fontWeight: 900, letterSpacing: '0.12em', color: '#60a5fa', textTransform: 'uppercase' }}>Q {questionIndex + 1} / 5</span>
+          </div>
+          <div style={{ padding: '0.3rem 0.8rem', background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem' }}>
+            <span style={{ fontSize: '0.625rem', fontWeight: 900, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.35)' }}>{formatTime(elapsedTime)}</span>
+          </div>
         </div>
 
+        {/* Current Question caption */}
         <AnimatePresence mode="wait">
           {showTranscript && !isLoading && currentQuestion && (
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="absolute inset-x-10 bottom-10 z-30"
+              exit={{ opacity: 0, y: 10 }}
+              style={{ position: 'absolute', left: '2rem', right: '2rem', bottom: '2rem', zIndex: 30, display: 'flex', justifyContent: 'center' }}
             >
-              <div className="bg-black/90 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-3xl max-w-2xl mx-auto">
-                 <p className="text-base text-white/80 leading-relaxed font-medium">
-                   {currentQuestion}
-                 </p>
+              <div style={{ background: 'rgba(5,5,5,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.07)', padding: '1.25rem 1.75rem', borderRadius: '1.5rem', maxWidth: '48rem', width: '100%' }}>
+                <p style={{ fontSize: '0.9375rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.7, fontWeight: 500, margin: 0 }}>{currentQuestion}</p>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
+        {/* Loading / Error Overlay */}
         <AnimatePresence>
           {(isLoading || error) && (
             <div className="iv-overlay-full">
               {error ? (
-                <div className="text-center p-12 bg-black border border-red-500/20 rounded-3xl max-w-sm">
-                  <AlertCircle className="text-red-500 mx-auto mb-6" size={48} />
-                  <h4 className="text-xl font-black text-white uppercase mb-2">Neural Error</h4>
-                  <p className="text-sm text-gray-500 mb-10 leading-relaxed">{error}</p>
-                  <button onClick={() => startStep(questionIndex, previousQA)} className="btn-primary w-full u-justify-center">REINITIALIZE LINK</button>
+                <div style={{ textAlign: 'center', padding: '2.5rem', background: '#0a0a0a', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '1.5rem', maxWidth: '26rem', width: '90%' }}>
+                  <AlertCircle color="#ef4444" size={40} style={{ margin: '0 auto 1.25rem', display: 'block' }} />
+                  <h4 style={{ fontSize: '1rem', fontWeight: 900, color: 'white', textTransform: 'uppercase', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>Neural Error</h4>
+                  <p style={{ fontSize: '0.8125rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.6 }}>{error}</p>
+                  <button onClick={() => startStep(questionIndex, previousQA)} className="btn-primary u-w-full u-justify-center" style={{ fontSize: '0.8125rem', padding: '0.875rem' }}>
+                    Reinitialize Link
+                  </button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-6">
-                  <Loader2 className="animate-spin text-blue-500" size={64} />
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-black tracking-[0.4em] text-blue-400 uppercase">Constructing Scene</span>
-                    <span className="text-[8px] font-bold text-white/10 uppercase tracking-[0.2em] mt-1">Protocol Secured</span>
-                  </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}>
+                    <Loader2 color="#3b82f6" size={48} />
+                  </motion.div>
+                  <span style={{ fontSize: '0.625rem', fontWeight: 900, letterSpacing: '0.35em', color: '#60a5fa', textTransform: 'uppercase' }}>Processing Question</span>
                 </div>
               )}
             </div>
           )}
         </AnimatePresence>
+
+        {/* Feedback Panel */}
+        <AnimatePresence>
+          {(feedback || isFeedbackLoading) && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              style={{ position: 'absolute', top: '5rem', right: '1.5rem', zIndex: 100, width: '22rem', background: 'rgba(5,5,5,0.95)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '1.25rem', padding: '1.25rem', boxShadow: '0 0 40px rgba(139,92,246,0.1), 0 20px 40px rgba(0,0,0,0.6)' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Sparkles size={14} color="#a78bfa" />
+                  <span style={{ fontSize: '0.5625rem', fontWeight: 900, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#a78bfa' }}>AI Feedback</span>
+                </div>
+                <button onClick={() => setFeedback(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', padding: '0.25rem' }}>
+                  <X size={14} />
+                </button>
+              </div>
+              {isFeedbackLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0' }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                    <Loader2 size={16} color="#a78bfa" />
+                  </motion.div>
+                  <span style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.4)' }}>Analyzing your answer...</span>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.65, margin: 0 }}>{feedback}</p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Grid-Based Control Bar */}
+      {/* Control Bar */}
       <div className="iv-control-bar">
-        
-        {/* Left: Sources */}
+
+        {/* Left: Mute / Video */}
         <div className="iv-source-group">
-          <button className={`iv-btn ${isMuted ? 'danger active' : ''}`} onClick={() => setIsMuted(!isMuted)}>
-             <div className="iv-btn-icon">{isMuted ? <MicOff size={22} /> : <Mic size={22} />}</div>
-             <span className="iv-btn-text">{isMuted ? 'Unmute' : 'Mute'}</span>
+          <button className={`iv-btn ${isMuted ? 'danger' : ''}`} onClick={() => setIsMuted(!isMuted)}>
+            {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+            <span className="iv-btn-text">{isMuted ? 'Unmute' : 'Mute'}</span>
           </button>
-          <button className={`iv-btn ${isVideoOff ? 'danger active' : ''}`} onClick={() => setIsVideoOff(!isVideoOff)}>
-             <div className="iv-btn-icon">{isVideoOff ? <VideoOff size={22} /> : <Video size={22} />}</div>
-             <span className="iv-btn-text">{isVideoOff ? 'Start' : 'Stop'}</span>
+          <button className={`iv-btn ${isVideoOff ? 'danger' : ''}`} onClick={() => setIsVideoOff(!isVideoOff)}>
+            {isVideoOff ? <VideoOff size={18} /> : <Video size={18} />}
+            <span className="iv-btn-text">{isVideoOff ? 'Start' : 'Stop'}</span>
           </button>
         </div>
 
-        {/* Center: Interaction */}
+        {/* Center Hub */}
         <div className="iv-interaction-hub">
+
           <button className={`iv-btn ${showTranscript ? 'active' : ''}`} onClick={() => setShowTranscript(!showTranscript)}>
-             <div className="iv-btn-icon"><MessageSquare size={22} /></div>
-             <span className="iv-btn-text">Captions</span>
+            <MessageSquare size={17} />
+            <span className="iv-btn-text">Captions</span>
           </button>
 
-          <div style={{ width: '1px', height: '40px', background: 'rgba(255,255,255,0.05)', margin: '0 8px' }} />
+          <div className="iv-hub-divider" />
 
           {isListening ? (
-             <button className="iv-btn iv-primary-action recording" onClick={toggleListening}>
-                <StopCircle size={24} />
-                <span className="text-[9px] font-black uppercase">Recording...</span>
-             </button>
+            <button className="iv-primary-action recording" onClick={toggleListening}>
+              <StopCircle size={19} />
+              <span className="iv-btn-text" style={{ color: 'rgba(255,255,255,0.9)' }}>Stop</span>
+            </button>
           ) : (
-             <button
-               disabled={isLoading}
-               className="iv-btn iv-primary-action ready"
-               onClick={toggleListening}
-             >
-                <Mic size={24} />
-                <span className="text-[9px] font-black uppercase">Record Answer</span>
-             </button>
+            <button disabled={isLoading} className="iv-primary-action ready" onClick={toggleListening}>
+              <Mic size={19} />
+              <span className="iv-btn-text" style={{ color: 'rgba(255,255,255,0.9)' }}>{answer ? 'Re-rec' : 'Record'}</span>
+            </button>
           )}
 
-          <div style={{ width: '1px', height: '40px', background: 'rgba(255,255,255,0.05)', margin: '0 8px' }} />
+          <div className="iv-hub-divider" />
 
           <button
-            disabled={!answer.trim() || isLoading}
-            className={`iv-btn ${!answer.trim() ? 'opacity-20' : ''}`}
-            onClick={handleSubmitAnswer}
+            disabled={!hasAnswer || isFeedbackLoading}
+            onClick={handleAskFeedback}
+            className="iv-btn"
+            style={hasAnswer ? { background: 'rgba(139,92,246,0.12)', borderColor: 'rgba(139,92,246,0.3)', color: '#a78bfa' } : {}}
           >
-             <div className="iv-btn-icon" style={{ color: '#10b981' }}><Send size={22} /></div>
-             <span className="iv-btn-text" style={{ color: '#10b981' }}>Submit</span>
+            <Sparkles size={17} />
+            <span className="iv-btn-text" style={{ color: hasAnswer ? '#a78bfa' : undefined }}>Ask AI</span>
           </button>
+
+          <div className="iv-hub-divider" />
+
+          <button
+            disabled={!hasAnswer || isLoading}
+            onClick={handleSubmitAnswer}
+            className="iv-btn"
+            style={hasAnswer ? { background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: '#10b981' } : {}}
+          >
+            <Send size={17} />
+            <span className="iv-btn-text" style={{ color: hasAnswer ? '#10b981' : undefined }}>Submit</span>
+          </button>
+
         </div>
 
-        {/* Right: Management */}
+        {/* Right: Exit */}
         <div className="iv-management-group">
-           <button 
-             onClick={() => router.push("/")}
-             className="px-8 py-3 bg-[#da3633]/10 border border-[#da3633]/20 hover:bg-[#da3633] text-[#da3633] hover:text-white rounded-xl text-[10px] font-black tracking-[0.2em] transition-all"
-           >
-             EXIT SESSION
-           </button>
+          <button onClick={() => router.push("/")} className="iv-exit-btn">Exit</button>
         </div>
-
       </div>
 
-      {/* Voice Transcript Floating */}
+      {/* Live transcript toast */}
       <AnimatePresence>
         {isListening && (
-          <div className="iv-toast">
-             <div className="flex items-center gap-2 mb-3">
-               <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-               <span className="text-[9px] font-black text-white/40 tracking-widest uppercase">Live Signal</span>
-             </div>
-             <p className="text-sm text-white/90 font-medium leading-relaxed italic">
-               "{answer || 'Waiting for audio signal...'}"
-             </p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            className="iv-toast"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem' }}>
+              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }} style={{ width: '0.375rem', height: '0.375rem', borderRadius: '50%', background: '#ef4444' }} />
+              <span style={{ fontSize: '0.5625rem', fontWeight: 900, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Live Signal</span>
+            </div>
+            <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.85)', fontWeight: 500, lineHeight: 1.6, fontStyle: 'italic', margin: 0 }}>
+              "{answer || 'Listening...'}"
+            </p>
+          </motion.div>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

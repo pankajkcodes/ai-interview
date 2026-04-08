@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { AIConfig } from "./types";
 
 /**
  * RE-COMPILATION SYNC: Updated to gemini-3-flash-preview for June 2026.
@@ -36,17 +37,18 @@ export const INTERVIEW_ROLES = [
   },
 ];
 
-function getChatModel() {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getChatModel(config?: AIConfig) {
+  const apiKey = config?.apiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not defined in environment variables.");
+    throw new Error("API Key is missing. Please provide it in settings or environment.");
   }
   const genAI = new GoogleGenerativeAI(apiKey);
-  return genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const modelName = config?.modelName || "gemini-3-flash-preview";
+  return genAI.getGenerativeModel({ model: modelName });
 }
 
-export async function getGeminiResponse(role: string, context: { questionIndex: number, previousQA: { question: string, answer: string }[] }) {
-  const model = getChatModel();
+export async function getGeminiResponse(role: string, context: { questionIndex: number, previousQA: { question: string, answer: string }[] }, config?: AIConfig) {
+  const model = getChatModel(config);
 
   const systemInstructions = `You are a professional technical interviewer for the position of ${role}.
   Your goal is to conduct a high-quality, 5-question interview.
@@ -72,8 +74,8 @@ export async function getGeminiResponse(role: string, context: { questionIndex: 
 /**
  * Final evaluation prompt to get score and feedback
  */
-export async function getFinalEvaluation(role: string, previousQA: { question: string, answer: string }[]) {
-  const model = getChatModel();
+export async function getFinalEvaluation(role: string, previousQA: { question: string, answer: string }[], config?: AIConfig) {
+  const model = getChatModel(config);
 
   const evaluationPrompt = `As a lead technical interviewer for ${role}, evaluate the candidate's overall performance based on the following interview transcript:
   

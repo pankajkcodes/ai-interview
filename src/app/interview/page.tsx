@@ -12,7 +12,7 @@ function InterviewContent() {
   const roleId = searchParams.get("role") || "flutter";
 
   return (
-    <main className="fixed inset-0 bg-black flex items-center justify-center p-4">
+    <main style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
       
       {/* 1. Main Application Substrate */}
       <motion.div 
@@ -21,12 +21,10 @@ function InterviewContent() {
         style={{
             width: '100%',
             height: '100%',
-            maxWidth: '1600px',
-            maxHeight: '960px',
             display: 'flex',
             flexDirection: 'column',
             backgroundColor: '#0a0a0a',
-            borderRadius: '2rem',
+            borderRadius: '1.5rem',
             overflow: 'hidden',
             border: '1px solid rgba(255, 255, 255, 0.05)',
             boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.8)'
@@ -66,7 +64,7 @@ function InterviewContent() {
         </div>
  
         {/* 2. Symmetrical View Grid */}
-        <div style={{ flexGrow: 1, position: 'relative', display: 'flex', padding: '24px', gap: '24px', background: '#030303' }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', padding: '16px', gap: '16px', background: '#030303' }}>
             
             {/* AI Side */}
             <div style={{ flex: 1, position: 'relative', borderRadius: '1.5rem', overflow: 'hidden', background: '#0d1117', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
@@ -88,9 +86,9 @@ function InterviewContent() {
 export default function InterviewPage() {
   return (
     <Suspense fallback={
-      <div className="fixed inset-0 bg-[#030303] flex flex-col items-center justify-center gap-6">
-        <Loader2 className="animate-spin text-blue-500" size={48} />
-        <span className="text-[10px] font-black tracking-[0.5em] text-white/20 uppercase">Establishing Encrypted Link</span>
+      <div style={{ position: 'fixed', inset: 0, background: '#030303', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5rem' }}>
+        <Loader2 color="#3b82f6" size={48} style={{ animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: '0.5625rem', fontWeight: 900, letterSpacing: '0.5em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>Establishing Encrypted Link</span>
       </div>
     }>
       <InterviewContent />
